@@ -4,6 +4,8 @@ import {
   eyeAspectRatio,
   faceMetrics,
   headPitchDegrees,
+  headPose,
+  median,
   mouthAspectRatio,
   trimmedMean,
 } from '../geometry';
@@ -125,5 +127,50 @@ describe('faceMetrics', () => {
         [EYE_OUTER[1]]: { x: 0.5 * scale, y: 0 },
       });
     expect(faceMetrics(build(1)).foreshortening).toBeCloseTo(faceMetrics(build(2.5)).foreshortening, 6);
+  });
+});
+
+describe('headPose (3-D)', () => {
+  /** Forehead/chin and eye corners of a face rotated by the given angles. */
+  function posed(pitchDeg: number, yawDeg: number) {
+    const p = (pitchDeg * Math.PI) / 180;
+    const y = (yawDeg * Math.PI) / 180;
+    const pts: Record<number, { x: number; y: number; z: number }> = {
+      // Vertical axis of length 0.3 rotated about x: forehead moves toward camera (−z) when pitching forward.
+      [FOREHEAD]: { x: 0.5, y: 0.5 - 0.15 * Math.cos(p), z: 0.15 * Math.sin(p) },
+      [CHIN]: { x: 0.5, y: 0.5 + 0.15 * Math.cos(p), z: -0.15 * Math.sin(p) },
+      [EYE_OUTER[0]]: { x: 0.5 - 0.1 * Math.cos(y), y: 0.45, z: -0.1 * Math.sin(y) },
+      [EYE_OUTER[1]]: { x: 0.5 + 0.1 * Math.cos(y), y: 0.45, z: 0.1 * Math.sin(y) },
+    };
+    const arr = Array.from({ length: 478 }, () => ({ x: 0, y: 0, z: 0 }));
+    for (const [i, v] of Object.entries(pts)) arr[Number(i)] = v;
+    return arr;
+  }
+
+  it('reads a frontal face as zero on every axis', () => {
+    const pose = headPose(posed(0, 0), 1)!;
+    expect(Math.abs(pose.pitch)).toBeLessThan(0.01);
+    expect(Math.abs(pose.yaw)).toBeLessThan(0.01);
+    expect(Math.abs(pose.roll)).toBeLessThan(0.01);
+  });
+
+  it('recovers a forward nod as negative pitch of the right size', () => {
+    expect(headPose(posed(-20, 0), 1)!.pitch).toBeCloseTo(-20, 0);
+  });
+
+  it('recovers yaw independently of pitch', () => {
+    const pose = headPose(posed(0, 30), 1)!;
+    expect(pose.yaw).toBeCloseTo(30, 0);
+    expect(Math.abs(pose.pitch)).toBeLessThan(0.5);
+  });
+
+  it('returns null when the landmarks carry no depth', () => {
+    expect(headPose(mesh({}), 1)).toBeNull();
+  });
+});
+
+describe('median', () => {
+  it('rejects a single outlier', () => {
+    expect(median([0.3, 0.05, 0.31])).toBe(0.3);
   });
 });

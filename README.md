@@ -24,7 +24,7 @@
 
 ### Contents
 
-[Quick start](#quick-start) · [Architecture](#architecture) · [Detection](#detection) · [Voice control](#voice-control) · [Interface](#interface) · [Limits](#limits)
+[Quick start](#quick-start) · [Architecture](#architecture) · [Detection](#detection) · [Machine learning](#machine-learning) · [Voice control](#voice-control) · [Interface](#interface) · [Limits](#limits)
 
 ---
 
@@ -33,7 +33,7 @@
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 43 unit tests over the detection logic
+npm test         # unit tests over the detection logic, ML features and dashboard states
 npm run build
 ```
 
@@ -49,9 +49,12 @@ src/lib/drowsiness.ts           the state machine; takes `now` as an argument, n
 src/lib/voice.ts                voice command parsing and spoken responses — pure, no mic access
 src/lib/config.ts               every threshold in one place, with the reasoning
 src/lib/frame.ts                frame luminance sampling
+src/lib/mlFeatures.ts           behavioural features for the classifier; a tested port of the Python
+src/lib/mlModel.ts              evaluates the exported tree ensemble
 src/hooks/useMonitor.ts         camera + model + rAF loop; the only impure layer
 src/hooks/useVoiceAssistant.ts  microphone + speech recognition glue
 src/components/                 presentation
+ml/                             offline dataset preparation and training; never runs live
 ```
 
 `DrowsinessAnalyzer` knows nothing about cameras or canvases. Its tests drive several minutes of simulated driving in under 60 ms.
@@ -82,6 +85,14 @@ Dividing by eye width is the point — the value is independent of distance from
 
 **Acknowledgement.** In the critical state the primary control becomes *I am awake*, which mutes repeat alarms for 60 s while leaving the display red. The alarm itself repeats on an interval rather than firing once — without that, a system that cannot be acknowledged is a system that gets muted permanently on day one.
 
+## Machine learning
+
+Once a model has been trained and exported, a classifier runs alongside the rules. Training is offline in Python (`ml/`, with its own [README](ml/README.md)): UTA-RLDD videos go through the same MediaPipe model the app uses, become 36 behavioural features per 60-second window, and train Random Forest and XGBoost candidates on subject-independent splits. The best model is saved with joblib and exported as JSON trees.
+
+The browser walks those trees itself, so a prediction needs no server and video still never leaves the device. Python and TypeScript features are held together by a shared test fixture.
+
+The model can raise the **drowsy** warning after five consecutive drowsy verdicts. It cannot raise **critical** or cancel a rule-based alert, so the eyes-shut and head-drop checks work exactly as they did. With no exported model, the dashboard says so and the app runs on rules alone. Evaluation results shown on the dashboard are read from the training run's own metrics file.
+
 ## Voice control
 
 Say **"Riri"** any time monitoring is running:
@@ -99,11 +110,11 @@ Built on the browser's Web Speech API, so it's Chrome/Edge only for now (see [Li
 
 ## Interface
 
-A Material Design 3 dark cockpit HUD. A two-column dashboard on wide screens — camera viewfinder and EAR waveform on the left, PERCLOS, telemetry, and the incident timeline on the right — collapsing to one column on narrow ones. A single CSS custom property `--state` carries the verdict to every accent — viewport border, PERCLOS figure, trace line, control deck — so the whole cockpit re-themes without a conditional class anywhere in the component tree.
+A night-drive instrument cluster. A two-column dashboard on wide screens — camera viewfinder and EAR waveform on the left, PERCLOS, telemetry, and the incident timeline on the right — collapsing to one column on narrow ones. A single CSS custom property `--state` carries the verdict to every accent — viewport border, PERCLOS figure, trace line, control deck — so the whole cockpit re-themes without a conditional class anywhere in the component tree.
 
 The EAR trace is the centrepiece: 20 seconds of history with the calibrated threshold drawn in, a gradient fill under the live curve, and closure runs shaded, so the algorithm can be watched deciding rather than trusted. PERCLOS marks both thresholds on its bar rather than hiding them in a colour change, and each telemetry cell shows the normal band next to the number so a reading like "6 blinks/min" is interpretable.
 
-Motion is deliberately limited to what's actually informative: the header's status beacon pulses only in the critical state, and the microphone indicator pulses only while it's genuinely listening. It is tempting to pulse everything red when the alarm fires, but a strobing alert aimed at someone already impaired is a hazard rather than a warning — colour, border weight and type size carry the hierarchy instead. `prefers-reduced-motion` turns all of it off.
+Motion carries meaning where it can. The road behind the dashboard cruises while the driver is alert, slows as they tire and stops at critical. The landing eye blinks with the six EAR landmarks riding on its lids, so the formula can be watched collapsing. Evaluation figures count up and bars fill as they scroll into view. It is tempting to pulse everything red when the alarm fires, but a strobing alert aimed at someone already impaired is a hazard rather than a warning, so nothing flashes: colour, border weight and type size carry the hierarchy instead. Animation uses only transforms and opacity, and an A/B run measured the same ~60 FPS with it on and off. `prefers-reduced-motion` turns all of it off.
 
 Keyboard focus is visible throughout and state changes are announced through one atomic `role="status"` region rather than competing live regions.
 

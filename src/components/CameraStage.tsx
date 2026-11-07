@@ -1,5 +1,5 @@
 import { Eye, VideoCamera, WarningOctagon } from '@phosphor-icons/react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type CSSProperties } from 'react';
 import type { DriverState } from '../lib/drowsiness';
 import type { Point } from '../lib/geometry';
 import { EYE_CONTOURS, FACE_OVAL } from '../lib/landmarks';
@@ -21,7 +21,7 @@ interface CameraStageProps {
 }
 
 const Corner = ({ className }: { className: string }) => (
-  <div className={`absolute w-3 h-3 border-2 pointer-events-none ${className}`} style={{ borderColor: 'var(--state)' }} />
+  <div className={`absolute w-5 h-5 border-2 pointer-events-none ${className}`} style={{ borderColor: 'var(--state)' }} />
 );
 
 export function CameraStage({
@@ -62,6 +62,12 @@ export function CameraStage({
       ctx.closePath();
     };
 
+    // The whole mesh as faint points: what the tracker sees, before the geometry.
+    ctx.fillStyle = accent;
+    ctx.globalAlpha = 0.45;
+    const dot = Math.max(1, w / 480);
+    for (const p of landmarks) ctx.fillRect(w - p.x * w, p.y * h, dot, dot);
+
     // Face outline, quiet.
     ctx.strokeStyle = accent;
     ctx.globalAlpha = 0.3;
@@ -95,6 +101,7 @@ export function CameraStage({
 
       {running ? (
         <>
+          <div className="scan-soft" />
           {state === 'calibrating' && (
             <div
               className="absolute inset-x-0 h-16 pointer-events-none sweep"
@@ -108,7 +115,7 @@ export function CameraStage({
           <Corner className="bottom-2.5 left-2.5 border-r-0 border-t-0 rounded-bl" />
           <Corner className="bottom-2.5 right-2.5 border-l-0 border-t-0 rounded-br" />
 
-          <div className="absolute top-2.5 inset-x-6 flex justify-between items-center gap-2 text-telemetry-mono-sm font-mono">
+          <div className="absolute top-3 inset-x-10 flex justify-between items-center gap-2 text-telemetry-mono-sm font-mono">
             <span
               className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-black/75 backdrop-blur-md border font-semibold"
               style={{ color: 'var(--state)', borderColor: 'var(--state)' }}
@@ -125,7 +132,7 @@ export function CameraStage({
             </span>
           </div>
 
-          <div className="absolute bottom-2.5 inset-x-6 flex items-end justify-between gap-2">
+          <div className="absolute bottom-3 inset-x-10 flex items-end justify-between gap-2">
             <div className="min-w-0">
               <div
                 className="font-mono text-2xl font-bold tracking-tight leading-none drop-shadow-[0_2px_12px_rgba(0,0,0,.9)]"
@@ -153,7 +160,8 @@ export function CameraStage({
           </div>
         </>
       ) : (
-        <div className="absolute inset-0 grid place-content-center text-center px-8 gap-2">
+        <div className="absolute inset-0 grid place-content-center text-center px-8 gap-2 overflow-hidden">
+          {!error && [0, 1, 2].map((i) => <span key={i} className="radar-ring" style={{ '--i': i } as CSSProperties} />)}
           {error ? (
             <WarningOctagon size={28} weight="light" className="text-primary-container mx-auto" />
           ) : (

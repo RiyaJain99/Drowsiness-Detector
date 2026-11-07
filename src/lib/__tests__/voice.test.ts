@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { Reading } from '../drowsiness';
+import { IDLE_READING, type Reading } from '../drowsiness';
 import { describeReading, parseVoiceCommand } from '../voice';
 
 const READING: Reading = {
+  ...IDLE_READING,
   state: 'alert',
   reason: 'eyes open',
   ear: 0.3,

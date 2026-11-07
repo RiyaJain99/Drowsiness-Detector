@@ -1,4 +1,4 @@
-import { Cpu, LockSimple, Microphone, ShieldCheck, WarningOctagon } from '@phosphor-icons/react';
+import { Cpu, LockSimple, Microphone, WarningOctagon } from '@phosphor-icons/react';
 import type { DriverState } from '../lib/drowsiness';
 import { clock } from '../lib/format';
 
@@ -30,7 +30,12 @@ export function TopBar({ state, reason, elapsedMs, running, listening }: TopBarP
               className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border"
               style={{ color: 'var(--state)', borderColor: 'var(--state)', background: 'var(--state-soft)' }}
             >
-              <ShieldCheck size={18} weight="bold" />
+              <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+                <g className="eye-lids">
+                  <path d="M2 12 Q12 3 22 12 Q12 21 2 12 Z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+                  <circle cx="12" cy="12" r="3.5" fill="currentColor" />
+                </g>
+              </svg>
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap">

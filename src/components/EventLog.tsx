@@ -23,7 +23,7 @@ export function EventLog({ events }: { events: readonly MonitorEvent[] }) {
   const critical = events.filter((e) => e.severity === 'crit').length;
 
   return (
-    <section className="bg-surface-container-low rounded-2xl p-3.5 border border-outline-variant/30">
+    <section className="panel p-3.5">
       <div className="flex items-center justify-between mb-2.5">
         <h2 className="text-body-md font-semibold text-on-surface flex items-center gap-1.5 m-0">
           <ClockCounterClockwise size={14} weight="bold" className="text-outline" />
@@ -40,12 +40,12 @@ export function EventLog({ events }: { events: readonly MonitorEvent[] }) {
         </p>
       ) : (
         <ol className="space-y-1.5 text-body-sm font-mono list-none m-0 p-0">
-          {newestFirst.map((e, i) => {
+          {newestFirst.map((e) => {
             const { text, className } = badge(e);
             return (
               <li
-                key={`${e.at}-${i}`}
-                className="flex items-center justify-between gap-2 py-1.5 px-2 rounded-lg bg-surface-container/70 border border-outline-variant/20"
+                key={`${e.at}-${e.label}`}
+                className="slide-in flex items-center justify-between gap-2 py-1.5 px-2 rounded-lg bg-surface-container/70 border border-outline-variant/20"
               >
                 <span className="flex items-center gap-2 min-w-0">
                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${DOT[e.severity]}`} />

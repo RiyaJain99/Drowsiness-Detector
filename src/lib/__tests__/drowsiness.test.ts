@@ -147,7 +147,148 @@ describe('face tracking loss', () => {
   it('degrades to drowsy rather than reporting a driver it cannot see as alert', () => {
     driver.calibrate();
     driver.analyzer.faceLost(driver.t);
+    driver.analyzer.faceLost(driver.t + 2000);
     expect(driver.analyzer.events.at(-1)?.detail).toBe('no face in frame');
+  });
+
+  it('rides out a brief tracking dropout without raising anything', () => {
+    driver.calibrate();
+    const reading = driver.analyzer.faceLost(driver.t + 300);
+    expect(reading.state).toBe('alert');
+    expect(driver.labels()).not.toContain('Drowsy');
+  });
+
+  it('escalates to critical when the face vanishes while the eyes are shut', () => {
+    driver.calibrate().run(300, SHUT);
+    driver.analyzer.faceLost(driver.t + 100);
+    const reading = driver.analyzer.faceLost(driver.t + 2000);
+    expect(reading.state).toBe('critical');
+    expect(driver.labels()).toContain('Microsleep');
+  });
+
+  it('does not count a long dropout as one giant eye closure when the face returns', () => {
+    driver.calibrate().run(200, SHUT);
+    driver.analyzer.faceLost(driver.t + 50);
+    driver.analyzer.faceLost(driver.t + 3000);
+    driver.t += 3000;
+    driver.run(5000, OPEN);
+    // One microsleep from "eyes shut then face lost"; reopening must not add another.
+    expect(driver.read().microsleeps).toBe(1);
+  });
+});
+
+describe('calibration quality', () => {
+  it('fails when the eyes are closed throughout, instead of learning a bogus baseline', () => {
+    driver.analyzer.beginCalibration(0);
+    const reading = driver.run(4500, 0.05).read();
+    expect(reading.calibration.phase).toBe('failed');
+    expect(driver.analyzer.currentThreshold).toBeNull();
+    expect(driver.labels()).toContain('Calibration failed');
+  });
+
+  it('fails when the head is turned well away from the camera', () => {
+    driver.analyzer.beginCalibration(0);
+    for (let t = 0; t < 4500; t += 1000 / 30) {
+      driver.t = t;
+      driver.analyzer.push({ ...frame(OPEN), pose: { pitch: 0, yaw: 40, roll: 0 } }, t);
+    }
+    expect(driver.read().calibration.phase).toBe('failed');
+  });
+
+  it('times out when no face is ever seen', () => {
+    driver.analyzer.beginCalibration(0);
+    driver.analyzer.faceLost(1000);
+    const reading = driver.analyzer.faceLost(16_000);
+    expect(reading.calibration.phase).toBe('failed');
+  });
+
+  it('keeps the previous baseline when a recalibration fails', () => {
+    driver.calibrate();
+    const before = driver.analyzer.currentThreshold;
+    driver.analyzer.beginCalibration(driver.t);
+    driver.run(4500, 0.05);
+    expect(driver.analyzer.currentThreshold).toBe(before);
+    // Monitoring resumes on the old baseline — and those shut eyes now alarm.
+    expect(driver.analyzer.currentState).not.toBe('calibrating');
+    expect(driver.labels()).toContain('Calibration failed');
+  });
+
+  it('reports progress while running', () => {
+    driver.analyzer.beginCalibration(0);
+    driver.run(2000, OPEN);
+    const progress = driver.analyzer.push(frame(OPEN), driver.t).calibration.progress;
+    expect(progress).toBeGreaterThan(0.4);
+    expect(progress).toBeLessThan(0.6);
+  });
+});
+
+describe('signal smoothing', () => {
+  it('ignores a single-frame EAR glitch', () => {
+    driver.calibrate().run(1000 / 30, SHUT).run(2000, OPEN);
+    expect(driver.read().totalBlinks).toBe(0);
+  });
+});
+
+describe('drowsiness score', () => {
+  it('is zero for an alert driver', () => {
+    expect(driver.calibrate().run(5000, OPEN).read().score).toBe(0);
+  });
+
+  it('rises with PERCLOS and explains itself part by part', () => {
+    driver.calibrate();
+    for (let i = 0; i < 30; i++) driver.run(300, SHUT).run(1200, OPEN);
+    const r = driver.read();
+    expect(r.score).toBeGreaterThan(15);
+    expect(r.scoreParts.perclos).toBeGreaterThan(15);
+    const sum = Object.values(r.scoreParts).reduce((a, b) => a + b, 0);
+    expect(r.score).toBeCloseTo(Math.min(100, sum), 5);
+  });
+});
+
+describe('distraction', () => {
+  const TURNED = { pitch: 0, yaw: 45, roll: 0 };
+  const AHEAD = { pitch: 0, yaw: 0, roll: 0 };
+  const run = (ms: number, pose: typeof TURNED) => {
+    for (let e = 0; e < ms; e += 1000 / 30) {
+      driver.t += 1000 / 30;
+      driver.analyzer.push({ ...frame(OPEN), pose }, driver.t);
+    }
+  };
+
+  it('flags a sustained head turn away from the road', () => {
+    driver.analyzer.beginCalibration(0);
+    run(4500, AHEAD);
+    run(3000, TURNED);
+    expect(driver.labels()).toContain('Looking away');
+  });
+
+  it('ignores a quick mirror check', () => {
+    driver.analyzer.beginCalibration(0);
+    run(4500, AHEAD);
+    for (let i = 0; i < 4; i++) {
+      run(800, TURNED);
+      run(1500, AHEAD);
+    }
+    expect(driver.labels()).not.toContain('Looking away');
+  });
+});
+
+describe('events', () => {
+  it('carry a confidence and the driver status for detections', () => {
+    driver.calibrate().run(900, SHUT).run(500, OPEN);
+    const microsleep = driver.analyzer.events.find((e) => e.label === 'Microsleep')!;
+    expect(microsleep.confidence).toBeGreaterThan(0.5);
+    expect(microsleep.confidence).toBeLessThanOrEqual(1);
+    expect(microsleep.status).toBe('critical');
+    expect(microsleep.kind).toBe('microsleep');
+  });
+
+  it('let a driver recover after yawns age out of the window', () => {
+    driver.calibrate();
+    for (let i = 0; i < 2; i++) driver.run(1500, OPEN, OPEN_MOUTH).run(1000, OPEN);
+    expect(driver.state).toBe('drowsy');
+    driver.run(310_000, OPEN);
+    expect(driver.state).toBe('alert');
   });
 });
 
@@ -191,5 +332,65 @@ describe('driver acknowledgement', () => {
     driver.calibrate();
     driver.analyzer.acknowledge(driver.t);
     expect(driver.analyzer.isAcknowledged(driver.t + 61_000)).toBe(false);
+  });
+});
+
+describe('trained model verdicts', () => {
+  const verdict = (drowsy: boolean) => ({ drowsy, probability: drowsy ? 0.9 : 0.1 });
+  let driver: Driver;
+
+  beforeEach(() => {
+    driver = new Driver(new DrowsinessAnalyzer());
+    driver.calibrate();
+  });
+
+  const feed = (drowsy: boolean, times: number) => {
+    for (let i = 0; i < times; i++) driver.analyzer.setModelVerdict(verdict(drowsy));
+  };
+
+  it('warns after a sustained run of drowsy verdicts', () => {
+    feed(true, 5);
+    const reading = driver.read();
+    expect(reading.state).toBe('drowsy');
+    expect(reading.reason).toContain('ML model');
+    expect(driver.analyzer.events.at(-1)?.confidence).toBeGreaterThan(0);
+  });
+
+  it('ignores a run that is too short', () => {
+    feed(true, 4);
+    expect(driver.read().state).toBe('alert');
+  });
+
+  it('needs the run to be unbroken', () => {
+    feed(true, 4);
+    feed(false, 1);
+    feed(true, 4);
+    expect(driver.read().state).toBe('alert');
+  });
+
+  it('forgets the run when the model has no verdict', () => {
+    feed(true, 4);
+    driver.analyzer.setModelVerdict(null);
+    feed(true, 1);
+    expect(driver.read().state).toBe('alert');
+  });
+
+  it('cannot raise critical on its own', () => {
+    feed(true, 50);
+    expect(driver.read().state).toBe('drowsy');
+  });
+
+  it('cannot talk the rules out of an alarm', () => {
+    feed(false, 50);
+    driver.run(700, SHUT);
+    expect(driver.analyzer.currentState).toBe('critical');
+  });
+
+  it('recovers after the dwell time once the model calms down', () => {
+    feed(true, 5);
+    driver.read();
+    feed(false, 1);
+    driver.run(3000, OPEN);
+    expect(driver.analyzer.currentState).toBe('alert');
   });
 });

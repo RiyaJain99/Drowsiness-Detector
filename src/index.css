@@ -165,3 +165,149 @@ body {
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.22); }
 * { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.12) transparent; }
+
+/* ─────────────────────────── Night-drive layer ───────────────────────────
+ * Motion rules for everything below:
+ *  - transform and opacity only, so it composites and never costs MediaPipe a
+ *    frame. For the same reason nothing blurs what sits above the moving road.
+ *  - the road carries meaning: it slows as the driver tires and stops at
+ *    critical. Nothing flashes, because a strobing alert aimed at someone
+ *    already impaired is a hazard, not a warning.
+ */
+:root { --road-speed: 2.4s; }
+/* The landing view reads as the brand, not as a muted "off" state. */
+body[data-state='idle'] { --state: var(--color-tertiary); }
+body[data-state='alert']       { --road-speed: 0.9s; }
+body[data-state='calibrating'] { --road-speed: 1.6s; }
+body[data-state='drowsy']      { --road-speed: 3.6s; }
+
+@layer components {
+  .panel {
+    position: relative;
+    border-radius: 1rem;
+    border: 1px solid color-mix(in srgb, var(--color-outline-variant) 34%, transparent);
+    background: linear-gradient(160deg,
+      color-mix(in srgb, var(--color-surface-container) 96%, transparent),
+      color-mix(in srgb, var(--color-surface-container-lowest) 96%, transparent));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04), 0 12px 32px -20px rgba(0, 0, 0, .9);
+    transition: border-color .3s, box-shadow .3s, transform .3s;
+  }
+  .panel:hover {
+    border-color: color-mix(in srgb, var(--state) 45%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 16px 40px -18px var(--state-soft);
+  }
+}
+
+.backdrop { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.backdrop-glow {
+  position: absolute; width: 60vmax; height: 60vmax; border-radius: 50%;
+  background: radial-gradient(circle, var(--state-soft), transparent 62%);
+  transition: background .8s;
+  animation: drift 26s ease-in-out infinite alternate;
+  will-change: transform;
+}
+.backdrop-glow.one { top: -30vmax; left: -14vmax; }
+.backdrop-glow.two { top: -24vmax; right: -22vmax; animation-duration: 34s; animation-direction: alternate-reverse; }
+.road {
+  position: absolute; inset: 24% -80% 0;
+  perspective: 300px; perspective-origin: 50% 0;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, transparent, #000 45%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 45%);
+}
+.road-plane {
+  position: absolute; inset: 0; transform-origin: 50% 0; transform: rotateX(78deg);
+  transform-style: preserve-3d;
+}
+.road-grid {
+  position: absolute; inset: -160px 0 -6000px;
+  background-image:
+    linear-gradient(to bottom, color-mix(in srgb, var(--state) 20%, transparent) 2px, transparent 2px),
+    linear-gradient(to right, color-mix(in srgb, var(--state) 20%, transparent) 2px, transparent 2px);
+  background-size: 80px 80px;
+  background-position: center top;
+  animation: drive var(--road-speed) linear infinite;
+  will-change: transform;
+}
+.road-lane {
+  position: absolute; top: -320px; bottom: -6000px; left: 50%; width: 12px; margin-left: -6px;
+  background: repeating-linear-gradient(to bottom, var(--state) 0 160px, transparent 160px 320px);
+  opacity: .3;
+  animation: drive-lane var(--road-speed) linear infinite;
+  will-change: transform;
+}
+body[data-state='critical'] .road-grid,
+body[data-state='critical'] .road-lane,
+body[data-state='critical'] .scan-soft { animation-play-state: paused; }
+
+@keyframes drift { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(8vmax, 5vmax, 0) scale(1.15); } }
+@keyframes drive { to { transform: translate3d(0, 80px, 0); } }
+@keyframes drive-lane { to { transform: translate3d(0, 320px, 0); } }
+
+/* Entrance: --i staggers siblings. Ends fully visible, so reduced motion is safe. */
+.rise { animation: rise .7s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--i, 0) * 80ms); }
+@keyframes rise { from { opacity: 0; transform: translate3d(0, 18px, 0); } to { opacity: 1; transform: none; } }
+
+.slide-in { animation: slide-in .35s cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes slide-in { from { opacity: 0; transform: translate3d(-10px, 0, 0); } to { opacity: 1; transform: none; } }
+
+/* Hero */
+.gradient-title {
+  background: linear-gradient(100deg, var(--color-on-surface) 20%, var(--state) 50%, var(--color-on-surface) 80%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: title-sheen 7s ease-in-out infinite alternate;
+}
+@keyframes title-sheen { from { background-position: 100% 0; } to { background-position: 0 0; } }
+
+.eye-lids { transform-origin: 50% 50%; transform-box: fill-box; animation: blink 5.2s ease-in-out infinite; }
+@keyframes blink {
+  0%, 88%, 100% { transform: scaleY(1); }
+  92%, 93% { transform: scaleY(.07); }
+  /* a slow second blink, the kind PERCLOS exists to catch */
+  96% { transform: scaleY(.85); }
+}
+.orbit { transform-origin: 50% 50%; transform-box: view-box; animation: orbit 24s linear infinite; }
+.orbit.reverse { animation-duration: 38s; animation-direction: reverse; }
+@keyframes orbit { to { transform: rotate(360deg); } }
+
+/* Pipeline strip */
+.flow-line { position: relative; height: 2px; flex: 1; min-width: 12px; overflow: hidden;
+  background: color-mix(in srgb, var(--color-outline-variant) 50%, transparent); }
+.flow-line::after {
+  content: ''; position: absolute; inset: 0; width: 40%;
+  background: linear-gradient(to right, transparent, var(--state));
+  animation: flow 1.6s linear infinite; animation-delay: calc(var(--i, 0) * .32s);
+}
+@keyframes flow { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
+
+/* Camera */
+.scan-soft {
+  position: absolute; inset-inline: 0; top: 0; height: 30%; pointer-events: none;
+  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--state) 9%, transparent), transparent);
+  animation: scan 6s linear infinite;
+}
+@keyframes scan { from { transform: translateY(-100%); } to { transform: translateY(340%); } }
+.radar-ring {
+  position: absolute; left: 50%; top: 50%; border-radius: 50%; translate: -50% -50%;
+  border: 1px solid color-mix(in srgb, var(--state) 40%, transparent);
+  animation: radar 4s ease-out infinite; animation-delay: calc(var(--i, 0) * 1.33s);
+  width: 70%; aspect-ratio: 1; opacity: 0;
+}
+@keyframes radar { from { transform: scale(.15); opacity: .8; } to { transform: scale(1); opacity: 0; } }
+
+/* Buttons */
+.sheen { position: relative; overflow: hidden; isolation: isolate; }
+.sheen::after {
+  content: ''; position: absolute; inset: 0; z-index: -1;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, .45) 50%, transparent 65%);
+  transform: translateX(-120%);
+  animation: sheen 3.6s ease-in-out infinite;
+}
+@keyframes sheen { 60%, 100% { transform: translateX(120%); } }
+
+/* Bars that fill when scrolled into view; see useInView. */
+.bar-fill { transform: scaleX(0); transform-origin: left; transition: transform 1.1s cubic-bezier(.2, .8, .2, 1); }
+[data-inview='true'] .bar-fill { transform: scaleX(1); }
+
+.gauge-arc { transition: stroke-dashoffset .6s cubic-bezier(.2, .8, .2, 1), stroke .4s; }

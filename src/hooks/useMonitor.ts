@@ -1,21 +1,34 @@
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DEFAULT_CONFIG } from '../lib/config';
-import { DrowsinessAnalyzer, type MonitorEvent, type Reading, type Sample } from '../lib/drowsiness';
+import {
+  DrowsinessAnalyzer,
+  IDLE_READING as IDLE,
+  type MonitorEvent,
+  type Reading,
+  type Sample,
+} from '../lib/drowsiness';
 import { frameLuminance } from '../lib/frame';
 import { faceMetrics, meanEyeAspectRatio, mouthAspectRatio, type Point } from '../lib/geometry';
-
-const IDLE: Reading = {
-  state: 'idle', reason: '', ear: 0, mar: 0, closed: false, perclos: 0,
-  blinksPerMinute: 0, yawns: 0, microsleeps: 0, nods: 0, pitch: 0,
-  threshold: null, baseline: null, acknowledged: false, transitioned: false,
-};
+import { FeatureWindow, NO_FACE, measureForModel } from '../lib/mlFeatures';
+import { classify, loadModel, type LoadedModel, type ModelPrediction } from '../lib/mlModel';
 
 /** Luminance is sampled every N frames — it changes slowly and costs a readback. */
 const LUMA_INTERVAL = 15;
 
+export interface MlState {
+  /** 'missing' means no trained model has been exported to public/ml. */
+  status: 'loading' | 'missing' | 'ready';
+  loaded: LoadedModel | null;
+  /** Null until the model has a usable window, and whenever the face is gone. */
+  prediction: ModelPrediction | null;
+  /** 0–1 progress towards the first usable window. */
+  warmup: number;
+}
+
 export interface Monitor {
   reading: Reading;
+  ml: MlState;
   events: readonly MonitorEvent[];
   landmarks: Point[] | null;
   trace: readonly Sample[];
@@ -42,6 +55,9 @@ export function useMonitor(videoRef: React.RefObject<HTMLVideoElement | null>): 
   const lumaTick = useRef(0);
   const fpsMark = useRef(0);
   const startedAt = useRef(0);
+  const model = useRef<LoadedModel | null>(null);
+  const featureWindow = useRef<FeatureWindow | null>(null);
+  const nextPrediction = useRef(0);
 
   const [reading, setReading] = useState<Reading>(IDLE);
   const [events, setEvents] = useState<readonly MonitorEvent[]>([]);
@@ -53,18 +69,54 @@ export function useMonitor(videoRef: React.RefObject<HTMLVideoElement | null>): 
   const [running, setRunning] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ml, setMl] = useState<MlState>({ status: 'loading', loaded: null, prediction: null, warmup: 0 });
+
+  useEffect(() => {
+    let cancelled = false;
+    loadModel()
+      .catch(() => null)
+      .then((loaded) => {
+        if (cancelled) return;
+        model.current = loaded;
+        featureWindow.current = loaded ? new FeatureWindow(loaded.model.feature_config) : null;
+        setMl((m) => ({ ...m, status: loaded ? 'ready' : 'missing', loaded }));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /** Feeds the rolling window every frame; evaluates the classifier once a second. */
+  const runModel = useCallback((measured: Parameters<FeatureWindow['push']>[1], now: number, calibrated: boolean) => {
+    const window = featureWindow.current;
+    const trained = model.current?.model;
+    if (!window || !trained) return;
+    window.push(now, measured);
+    if (!calibrated || now < nextPrediction.current) return;
+    nextPrediction.current = now + DEFAULT_CONFIG.modelIntervalMs;
+
+    const began = performance.now();
+    const features = window.features();
+    const prediction = features ? classify(trained, features, performance.now() - began) : null;
+    if (prediction) prediction.latencyMs = performance.now() - began;
+    analyzer.current.setModelVerdict(
+      prediction && { drowsy: prediction.label === 'drowsy', probability: prediction.probability },
+    );
+    const warmup = Math.min(1, window.heldSeconds / trained.feature_config.min_window_s);
+    setMl((m) => ({ ...m, prediction, warmup }));
+  }, []);
 
   const loop = useCallback(() => {
     frame.current = requestAnimationFrame(loop);
     const video = videoRef.current;
-    const model = landmarker.current;
-    if (!video || !model || video.readyState < 2) return;
+    const tracker = landmarker.current;
+    if (!video || !tracker || video.readyState < 2) return;
 
     const now = performance.now();
     // MediaPipe rejects a repeated timestamp, so only run on a fresh frame.
     if (video.currentTime !== lastFrameTime.current) {
       lastFrameTime.current = video.currentTime;
-      const points = model.detectForVideo(video, now).faceLandmarks?.[0] as Point[] | undefined;
+      const points = tracker.detectForVideo(video, now).faceLandmarks?.[0] as Point[] | undefined;
 
       if (points) {
         const next = analyzer.current.push(
@@ -77,9 +129,17 @@ export function useMonitor(videoRef: React.RefObject<HTMLVideoElement | null>): 
         );
         setReading({ ...next, acknowledged: analyzer.current.isAcknowledged(now) });
         setLandmarks(points);
+        // A failed baseline must not become the model's baseline either.
+        if (next.calibration.phase === 'failed') featureWindow.current?.reset();
+        runModel(
+          measureForModel(points, video.videoWidth / video.videoHeight),
+          now,
+          next.calibration.phase === 'success',
+        );
       } else {
-        analyzer.current.faceLost(now);
+        const next = analyzer.current.faceLost(now);
         setLandmarks(null);
+        runModel(NO_FACE, now, next.calibration.phase === 'success');
       }
       setTrace([...analyzer.current.trace]);
       setEvents([...analyzer.current.events]);
@@ -94,7 +154,7 @@ export function useMonitor(videoRef: React.RefObject<HTMLVideoElement | null>): 
       fpsMark.current = now;
     }
     setElapsed(Date.now() - startedAt.current);
-  }, [videoRef]);
+  }, [videoRef, runModel]);
 
   const start = useCallback(async () => {
     setError(null);
@@ -117,6 +177,9 @@ export function useMonitor(videoRef: React.RefObject<HTMLVideoElement | null>): 
 
       analyzer.current.reset();
       analyzer.current.beginCalibration(performance.now());
+      featureWindow.current?.reset();
+      nextPrediction.current = 0;
+      setMl((m) => ({ ...m, prediction: null, warmup: 0 }));
       startedAt.current = Date.now();
       fpsMark.current = performance.now();
       setRunning(true);
@@ -143,6 +206,8 @@ export function useMonitor(videoRef: React.RefObject<HTMLVideoElement | null>): 
     landmarker.current = null;
     lastFrameTime.current = -1;
     analyzer.current.reset();
+    featureWindow.current?.reset();
+    setMl((m) => ({ ...m, prediction: null, warmup: 0 }));
     setRunning(false);
     setReading(IDLE);
     setLandmarks(null);
@@ -152,7 +217,10 @@ export function useMonitor(videoRef: React.RefObject<HTMLVideoElement | null>): 
   }, []);
 
   const recalibrate = useCallback(() => {
-    if (running) analyzer.current.beginCalibration(performance.now());
+    if (!running) return;
+    analyzer.current.beginCalibration(performance.now());
+    featureWindow.current?.reset();
+    setMl((m) => ({ ...m, prediction: null, warmup: 0 }));
   }, [running]);
 
   const acknowledge = useCallback(() => {
@@ -165,7 +233,7 @@ export function useMonitor(videoRef: React.RefObject<HTMLVideoElement | null>): 
   useEffect(() => stop, [stop]);
 
   return {
-    reading, events, landmarks, trace, fps, luma,
+    reading, ml, events, landmarks, trace, fps, luma,
     lowLight: luma < DEFAULT_CONFIG.lowLightLuma,
     elapsedMs, running, loading, error,
     start, stop, recalibrate, acknowledge,

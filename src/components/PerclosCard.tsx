@@ -19,7 +19,7 @@ export function PerclosCard({ perclos, ready }: { perclos: number; ready: boolea
         : 'Within normal range';
 
   return (
-    <section className="bg-surface-container-low rounded-2xl p-4 border border-outline-variant/30 relative overflow-hidden">
+    <section className="panel p-4 overflow-hidden">
       <div
         className="absolute -right-8 -top-8 w-32 h-32 rounded-full blur-2xl pointer-events-none"
         style={{ background: 'var(--state-soft)' }}

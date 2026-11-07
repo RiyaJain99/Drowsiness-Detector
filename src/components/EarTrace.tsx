@@ -92,7 +92,7 @@ export function EarTrace({ trace, threshold }: { trace: readonly Sample[]; thres
   const live = trace.length > 0 ? trace[trace.length - 1].ear : null;
 
   return (
-    <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-low px-3.5 pt-3.5 pb-2.5">
+    <section className="panel px-3.5 pt-3.5 pb-2.5">
       <div className="flex items-baseline gap-2 flex-wrap mb-2.5">
         <h2 className="m-0 text-body-md font-semibold text-on-surface">Eye aspect ratio · last 20s</h2>
         <div className="flex gap-2.5 ml-auto text-telemetry-mono-sm font-mono text-outline">

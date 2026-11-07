@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { Backdrop } from './components/Backdrop';
 import { CameraStage } from './components/CameraStage';
 import { ControlDeck } from './components/ControlDeck';
 import { CriticalBanner } from './components/CriticalBanner';
 import { EarTrace } from './components/EarTrace';
 import { EventLog } from './components/EventLog';
+import { Hero } from './components/Hero';
+import { ModelMetrics, ModelPredictionCard } from './components/ModelPanel';
 import { PerclosCard } from './components/PerclosCard';
 import { STATE_COPY, TopBar } from './components/TopBar';
 import { TelemetryGrid } from './components/TelemetryGrid';
@@ -67,7 +70,8 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="relative min-h-screen flex flex-col">
+      <Backdrop />
       <TopBar
         state={reading.state}
         reason={reading.reason}
@@ -76,7 +80,11 @@ export default function App() {
         listening={listening}
       />
 
-      <main className="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 py-5 space-y-4">
+      <main className="relative z-10 flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 py-5 space-y-4">
+        {!running && (
+          <Hero ml={monitor.ml} loading={loading} error={error} onStart={() => void monitor.start()} />
+        )}
+
         {critical && (
           <CriticalBanner
             reason={reading.reason}
@@ -89,7 +97,7 @@ export default function App() {
 
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
           {/* ── Left column: HUD viewfinder + EAR waveform ── */}
-          <div className="xl:col-span-7 space-y-4">
+          <div className="rise xl:col-span-7 space-y-4">
             <CameraStage
               videoRef={videoRef}
               landmarks={monitor.landmarks}
@@ -115,12 +123,15 @@ export default function App() {
           </div>
 
           {/* ── Right column: PERCLOS, telemetry, incident timeline ── */}
-          <div className="xl:col-span-5 space-y-4">
+          <div className="rise xl:col-span-5 space-y-4" style={{ '--i': 1 } as CSSProperties}>
             <PerclosCard perclos={reading.perclos} ready={reading.threshold !== null} />
+            <ModelPredictionCard ml={monitor.ml} reading={reading} running={running} />
             <TelemetryGrid reading={reading} />
             <EventLog events={events} />
           </div>
         </div>
+
+        <ModelMetrics ml={monitor.ml} />
 
         <ControlDeck
           running={running}

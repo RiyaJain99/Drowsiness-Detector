@@ -75,7 +75,7 @@ export function TelemetryGrid({ reading }: { reading: Reading }) {
       {cells.map((cell) => (
         <div
           key={cell.label}
-          className="bg-surface-container-low p-3 rounded-xl border border-outline-variant/30 flex flex-col shadow-sm"
+          className="panel p-3 flex flex-col"
         >
           <div className="flex items-center justify-between gap-1">
             <span className="text-body-sm text-outline">{cell.label}</span>
