@@ -3,3 +3,9 @@ dist
 public/mediapipe
 *.local
 .DS_Store
+
+# ML: virtualenv, raw videos and extracted per-frame data never go in git
+ml/.venv
+ml/data
+__pycache__
+.pytest_cache

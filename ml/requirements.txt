@@ -1,0 +1,10 @@
+# Verified together on Python 3.14 (macOS arm64). xgboost 3.4 requires Python >= 3.12.
+mediapipe==1.2.2
+opencv-contrib-python==5.0.0.93  # the build mediapipe depends on
+numpy==2.5.4
+pandas==3.1.1
+pyarrow==26.0.1
+scikit-learn==1.9.1
+xgboost==3.4.1
+joblib==1.6.0
+pytest==9.2.0
