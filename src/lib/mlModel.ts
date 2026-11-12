@@ -1,5 +1,6 @@
 /**
- * Evaluates the trained tree ensemble exported by `ml/drowsyguard_ml/export.py`.
+ * Evaluates the model exported by `ml/drowsyguard_ml/export.py`: a tree
+ * ensemble, or a logistic regression with its scaler folded into the weights.
  *
  * The model is data, not code: `public/ml/model.json` exists only after a real
  * training run. When it is absent there is simply no prediction — nothing here
@@ -18,17 +19,19 @@ interface Tree {
 
 export interface TrainedModel {
   schema: number;
-  kind: 'random_forest' | 'xgboost';
+  kind: 'random_forest' | 'xgboost' | 'logistic_regression';
   trained_at: string;
   threshold: number;
   feature_names: string[];
   feature_config: FeatureConfig;
-  /** 'mean' averages leaf probabilities (forest); 'logistic' sums margins (boosting). */
-  combine: 'mean' | 'logistic';
+  /** 'mean' averages leaf probabilities (forest); 'logistic' sums margins (boosting); 'linear' is w·x. */
+  combine: 'mean' | 'logistic' | 'linear';
   /** xgboost branches on x < t; scikit-learn on x <= t. */
   strict: boolean;
   bias: number;
   trees: Tree[];
+  /** Linear models only: one weight per feature, in feature_names order. */
+  weights?: number[];
 }
 
 export interface ModelPrediction {
@@ -56,6 +59,11 @@ function walk(tree: Tree, x: Float32Array, strict: boolean): number {
 /** P(drowsy). Inputs go through float32 because both training libraries use it. */
 export function evaluateModel(model: TrainedModel, features: readonly number[]): number {
   const x = Float32Array.from(features);
+  if (model.combine === 'linear') {
+    let z = model.bias;
+    model.weights!.forEach((w, i) => (z += w * x[i]));
+    return 1 / (1 + Math.exp(-z));
+  }
   let raw = 0;
   for (const tree of model.trees) raw += walk(tree, x, model.strict);
   return model.combine === 'mean' ? raw / model.trees.length : 1 / (1 + Math.exp(-(raw + model.bias)));
@@ -75,8 +83,11 @@ export function classify(model: TrainedModel, features: readonly number[], laten
 /** Rejects anything that is not a complete model, so a bad file cannot yield predictions. */
 export function parseModel(raw: unknown, expectedFeatures?: number): TrainedModel | null {
   const m = raw as Partial<TrainedModel> | null;
-  if (!m || m.schema !== SCHEMA || !Array.isArray(m.trees) || m.trees.length === 0) return null;
+  if (!m || m.schema !== SCHEMA || !Array.isArray(m.trees)) return null;
   if (!Array.isArray(m.feature_names) || !m.feature_config || typeof m.threshold !== 'number') return null;
+  const linear = m.combine === 'linear';
+  if (linear && (!Array.isArray(m.weights) || m.weights.length !== m.feature_names.length)) return null;
+  if (!linear && m.trees.length === 0) return null;
   if (expectedFeatures !== undefined && m.feature_names.length !== expectedFeatures) return null;
   return m as TrainedModel;
 }
@@ -107,7 +118,8 @@ export interface TrainingReport {
   trained_at: string;
   datasets: string[];
   data: { train: DataSummary; val: DataSummary; test: DataSummary; all: DataSummary };
-  model: { kind: string; threshold: number };
+  model: { kind: string; threshold: number; features_used?: string[] };
+  notes?: string[];
   candidates: { kind: string; val: { roc_auc: number | null; f1: number } }[];
   test: { window: MetricBlock; video: MetricBlock; rule_baseline: MetricBlock & { rule: string } };
   cross_subject: {

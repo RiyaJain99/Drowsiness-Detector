@@ -35,11 +35,14 @@ class DrowsinessClassifier:
         if bundle["feature_names"] != FEATURE_NAMES:
             raise ValueError("Model was trained on a different feature set than this code computes.")
         self.model = bundle["model"]
+        self.columns = [FEATURE_NAMES.index(c) for c in bundle.get("columns", FEATURE_NAMES)]
         self.threshold = bundle["threshold"]
         self.feature_config = FeatureConfig(**bundle["feature_config"])
 
     def predict_proba(self, vectors: np.ndarray) -> np.ndarray:
-        return self.model.predict_proba(np.asarray(vectors, dtype=np.float32))[:, 1]
+        """``vectors``: full feature vectors in FEATURE_NAMES order."""
+        full = np.asarray(vectors, dtype=np.float32)
+        return self.model.predict_proba(full[:, self.columns])[:, 1]
 
     def predict(self, vector: Sequence[float]) -> Prediction:
         p = float(self.predict_proba(np.asarray(vector)[None, :])[0])

@@ -7,7 +7,7 @@ unless a Python re-implementation of that walk reproduces ``predict_proba``.
 from __future__ import annotations
 
 import json
-from typing import Dict
+from typing import Dict, List
 
 import numpy as np
 
@@ -60,6 +60,14 @@ def _boosted(model, sample: np.ndarray) -> Dict:
     return payload
 
 
+def _linear(pipeline) -> Dict:
+    """Fold the scaler into the weights: P = sigmoid(bias + w . x) on raw features."""
+    scaler, model = pipeline[0], pipeline[-1]
+    coef = model.coef_[0] / scaler.scale_
+    bias = float(model.intercept_[0] - np.sum(coef * scaler.mean_))
+    return {"combine": "linear", "strict": False, "bias": bias, "trees": [], "weights": coef.tolist()}
+
+
 def _walk(tree: Dict, row: np.ndarray, strict: bool) -> float:
     i = 0
     while tree["f"][i] >= 0:
@@ -76,15 +84,41 @@ def _raw_scores(payload: Dict, X: np.ndarray) -> np.ndarray:
 
 def evaluate(payload: Dict, X: np.ndarray) -> np.ndarray:
     """Reference implementation of ``evaluateModel`` in mlModel.ts."""
+    if payload["combine"] == "linear":
+        z = X.astype(np.float64) @ np.array(payload["weights"]) + payload["bias"]
+        return 1 / (1 + np.exp(-z))
     raw = _raw_scores(payload, X)
     if payload["combine"] == "mean":
         return raw / len(payload["trees"])
     return 1 / (1 + np.exp(-(raw + payload["bias"])))
 
 
-def export_model(model, kind: str, threshold: float, report: Dict, X_check: np.ndarray, expected: np.ndarray) -> None:
+def _remap(payload: Dict, columns: List[str]) -> Dict:
+    """Point tree splits at positions in the full feature vector the browser computes."""
+    position = [FEATURE_NAMES.index(c) for c in columns]
+    if payload["combine"] == "linear":
+        full = [0.0] * len(FEATURE_NAMES)
+        for weight, index in zip(payload["weights"], position):
+            full[index] = weight
+        payload["weights"] = full
+        return payload
+    for tree in payload["trees"]:
+        tree["f"] = [position[f] if f >= 0 else f for f in tree["f"]]
+    return payload
+
+
+def export_model(model, kind: str, threshold: float, report: Dict, X_check: np.ndarray, expected: np.ndarray,
+                 columns: List[str] = FEATURE_NAMES) -> None:
+    """``X_check`` holds full feature vectors; the model may use a subset (``columns``)."""
     sample = X_check[: min(len(X_check), 500)]
-    payload = _forest(model) if kind == "random_forest" else _boosted(model, sample)
+    subset = sample[:, [FEATURE_NAMES.index(c) for c in columns]]
+    if kind == "logistic_regression":
+        payload = _linear(model)
+    elif kind == "random_forest":
+        payload = _forest(model)
+    else:
+        payload = _boosted(model, subset)
+    payload = _remap(payload, columns)
     drift = float(np.max(np.abs(evaluate(payload, sample) - expected[: len(sample)])))
     if drift > 1e-4:
         raise AssertionError(f"exported model disagrees with the trained one by {drift}")

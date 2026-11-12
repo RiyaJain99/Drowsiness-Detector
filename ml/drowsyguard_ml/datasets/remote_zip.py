@@ -18,6 +18,10 @@ USER_AGENT = "drowsyguard-dataset-prep"
 CHUNK = 1 << 20
 
 
+class NotFileData(OSError):
+    """The host answered with something other than the requested bytes (often a rate-limit page)."""
+
+
 def _open(url: str, start: int, end: int, timeout: int = 60):
     req = urllib.request.Request(url, headers={"Range": f"bytes={start}-{end}", "User-Agent": USER_AGENT})
     return urllib.request.urlopen(req, timeout=timeout)
@@ -76,6 +80,9 @@ def fetch_member(url: str, info: zipfile.ZipInfo, dest: Path, retries: int = 8) 
         while start + done <= end:
             try:
                 with _open(url, start + done, end, timeout=120) as r:
+                    kind = r.headers.get("Content-Type", "")
+                    if r.status != 206 or "html" in kind or "text" in kind:
+                        raise NotFileData(f"got HTTP {r.status} {kind} instead of a byte range")
                     while True:
                         chunk = r.read(CHUNK)
                         if not chunk:
@@ -85,6 +92,16 @@ def fetch_member(url: str, info: zipfile.ZipInfo, dest: Path, retries: int = 8) 
                         crc = zlib.crc32(data, crc)
                         out.write(data)
                         failures = 0
+            except zlib.error as err:
+                # Bad bytes from the host: restart this member from scratch after a pause.
+                failures += 1
+                if failures > retries:
+                    raise RuntimeError(f"giving up on {info.filename}: {err}") from err
+                out.seek(0)
+                out.truncate()
+                done, crc = 0, 0
+                inflate = zlib.decompressobj(-15) if info.compress_type == zipfile.ZIP_DEFLATED else None
+                time.sleep(min(300, 15 * 2**failures))
             except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as err:
                 failures += 1
                 if failures > retries:

@@ -9,3 +9,4 @@ ml/.venv
 ml/data
 __pycache__
 .pytest_cache
+tsconfig.tsbuildinfo

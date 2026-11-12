@@ -2,7 +2,11 @@ import { ArrowRight, Brain, Cpu, LockSimple, Scan } from '@phosphor-icons/react'
 import { Fragment, type CSSProperties } from 'react';
 import type { MlState } from '../hooks/useMonitor';
 
-const KIND_NAME: Record<string, string> = { random_forest: 'Random Forest', xgboost: 'XGBoost' };
+const KIND_NAME: Record<string, string> = {
+  random_forest: 'Random Forest',
+  xgboost: 'XGBoost',
+  logistic_regression: 'Logistic regression',
+};
 
 /** The six EAR landmarks, in the order the formula names them. */
 const LANDMARKS: [string, number, number][] = [
@@ -74,7 +78,7 @@ function Pipeline({ ml }: { ml: MlState }) {
     ['Webcam', 'stays on device'],
     ['MediaPipe', '478 landmarks'],
     ['Features', '36 per 60 s window'],
-    [trained ? (KIND_NAME[trained.kind] ?? trained.kind) : 'Classifier', trained ? `${trained.trees.length} trees` : 'not trained yet'],
+    [trained ? (KIND_NAME[trained.kind] ?? trained.kind) : 'Classifier', trained ? (trained.trees.length ? `${trained.trees.length} trees` : 'linear model') : 'not trained yet'],
     ['Warning', 'rules + model'],
   ];
   return (

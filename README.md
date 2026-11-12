@@ -50,7 +50,7 @@ src/lib/voice.ts                voice command parsing and spoken responses — p
 src/lib/config.ts               every threshold in one place, with the reasoning
 src/lib/frame.ts                frame luminance sampling
 src/lib/mlFeatures.ts           behavioural features for the classifier; a tested port of the Python
-src/lib/mlModel.ts              evaluates the exported tree ensemble
+src/lib/mlModel.ts              evaluates the exported model (linear or tree ensemble)
 src/hooks/useMonitor.ts         camera + model + rAF loop; the only impure layer
 src/hooks/useVoiceAssistant.ts  microphone + speech recognition glue
 src/components/                 presentation
@@ -87,11 +87,13 @@ Dividing by eye width is the point — the value is independent of distance from
 
 ## Machine learning
 
-Once a model has been trained and exported, a classifier runs alongside the rules. Training is offline in Python (`ml/`, with its own [README](ml/README.md)): UTA-RLDD videos go through the same MediaPipe model the app uses, become 36 behavioural features per 60-second window, and train Random Forest and XGBoost candidates on subject-independent splits. The best model is saved with joblib and exported as JSON trees.
+Once a model has been trained and exported, a classifier runs alongside the rules. Training is offline in Python (`ml/`, with its own [README](ml/README.md)): UTA-RLDD videos go through the same MediaPipe model the app uses, become 36 behavioural features per 60-second window, and train logistic regression, Random Forest and XGBoost candidates on subject-independent splits. The best by cross-validation is saved with joblib and exported as JSON.
 
-The browser walks those trees itself, so a prediction needs no server and video still never leaves the device. Python and TypeScript features are held together by a shared test fixture.
+The browser evaluates that JSON itself, so a prediction needs no server and video still never leaves the device. Python and TypeScript features are held together by a shared test fixture.
 
 The model can raise the **drowsy** warning after five consecutive drowsy verdicts. It cannot raise **critical** or cancel a rule-based alert, so the eyes-shut and head-drop checks work exactly as they did. With no exported model, the dashboard says so and the app runs on rules alone. Evaluation results shown on the dashboard are read from the training run's own metrics file.
+
+The current model is logistic regression trained on 30 RLDD subjects. On five held-out subjects it scores ROC-AUC 0.864 and F1 0.617, against 0.846 and 0.471 for the PERCLOS rule alone, while flagging 5.6% of alert windows. It catches 47% of drowsy windows, so it adds to the rules rather than replacing them. Full numbers and caveats are in the [ml README](ml/README.md#results-of-the-current-run).
 
 ## Voice control
 

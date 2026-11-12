@@ -180,3 +180,42 @@ def test_xgboost_export_reproduces_xgboost():
     X, y = _xy()
     model = XGBClassifier(n_estimators=9, max_depth=3).fit(X, y)
     assert np.allclose(evaluate(_boosted(model, X), X), model.predict_proba(X)[:, 1], atol=1e-5)
+
+
+def test_subset_model_exports_against_full_vectors():
+    from drowsyguard_ml.export import _remap
+
+    X, y = _xy()
+    full = np.zeros((len(X), len(FEATURE_NAMES)), dtype=np.float32)
+    columns = [FEATURE_NAMES[3], FEATURE_NAMES[7]]
+    full[:, 3], full[:, 7] = X[:, 0], X[:, 1]
+    model = RandomForestClassifier(n_estimators=5, max_depth=3, random_state=0).fit(X, y)
+    payload = _remap(_forest(model), columns)
+    assert np.allclose(evaluate(payload, full), model.predict_proba(X)[:, 1], atol=1e-5)
+
+
+def test_linear_export_folds_in_the_scaler():
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    from drowsyguard_ml.export import _linear, _remap
+
+    X, y = _xy()
+    X = X * np.array([3.0, 0.2], dtype=np.float32) + 5
+    model = make_pipeline(StandardScaler(), LogisticRegression()).fit(X, y)
+    full = np.zeros((len(X), len(FEATURE_NAMES)), dtype=np.float32)
+    full[:, 2], full[:, 9] = X[:, 0], X[:, 1]
+    payload = _remap(_linear(model), [FEATURE_NAMES[2], FEATURE_NAMES[9]])
+    assert np.allclose(evaluate(payload, full), model.predict_proba(X)[:, 1], atol=1e-5)
+
+
+def test_false_alarm_threshold_caps_the_rate():
+    from drowsyguard_ml.evaluate import threshold_for_false_alarm_rate
+
+    rng = np.random.default_rng(0)
+    y = np.r_[np.zeros(500), np.ones(500)].astype(int)
+    proba = np.r_[rng.uniform(0, 0.7, 500), rng.uniform(0.3, 1, 500)]
+    cut = threshold_for_false_alarm_rate(y, proba, 0.2)
+    assert (proba[y == 0] >= cut).mean() <= 0.2
+    assert (proba[y == 0] >= cut).mean() > 0.18  # and no stricter than needed

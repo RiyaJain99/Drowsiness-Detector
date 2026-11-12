@@ -7,7 +7,7 @@ video ──► prepare ──► frames/*.parquet ──► build_features ─�
           MediaPipe    per-frame ratios     60 s windows                            │
                                                                                      ▼
  webcam ─► MediaPipe ─► mlFeatures.ts ─► mlModel.ts ◄── public/ml/model.json + metrics.json
-                        same features    tree walker
+                        same features    model evaluator
 ```
 
 ## Setup
@@ -83,10 +83,10 @@ python -m drowsyguard_ml.train
 
 Splits are by subject and use RLDD's official folds: folds 1–3 train, fold 4 validation, fold 5 test. Subjects from other datasets get a stable hashed fold. Training fails rather than continuing if a subject appears in two partitions.
 
-1. Random Forest and XGBoost candidates are fitted on train and compared on validation.
-2. The best ROC-AUC wins; its decision threshold is the one with the best validation F1.
-3. That configuration is refitted on train and validation together.
-4. Test subjects are scored once. Nothing is tuned afterwards.
+1. Logistic regression, Random Forest and XGBoost candidates, each on all 36 features and on a 34-feature "state only" subset (without absolute eye openness and eye asymmetry, which can identify a person rather than their state), are scored by leave-one-fold-out cross-validation over folds 1–4.
+2. The best mean ROC-AUC wins. Its threshold is the one with the highest recall that flags at most 20% of alert windows in the pooled out-of-fold predictions. An F1-optimal threshold raised the alarm on half of alert windows, which is a detector that gets switched off.
+3. That configuration is refitted on folds 1–4 together.
+4. Test subjects (fold 5) are scored once. Nothing is tuned afterwards.
 5. The configuration is rerun leaving out each official fold, as a cross-subject stability check.
 
 The app's own PERCLOS rule is scored on the same windows so the comparison is visible.
@@ -99,11 +99,28 @@ Outputs:
 | `artifacts/preprocessing.json` | Feature config, landmarker, subject lists per partition |
 | `artifacts/feature_metadata.json` | Feature order and dtype |
 | `artifacts/metrics.json` | Every metric from the run |
-| `public/ml/model.json` | Trees as flat arrays for the browser |
+| `public/ml/model.json` | Linear weights (scaler folded in) or trees as flat arrays, for the browser |
 | `public/ml/metrics.json` | What the dashboard displays |
 | `public/ml/model-check.json` | Real test rows with Python's outputs, replayed by vitest |
 
-Export fails unless the exported trees reproduce `predict_proba`. Until a run succeeds these files do not exist, and the dashboard says no model is installed.
+Export fails unless the exported model reproduces `predict_proba`. Until a run succeeds these files do not exist, and the dashboard says no model is installed.
+
+## Results of the current run
+
+30 RLDD subjects (19 train, 6 validation, 5 test; 59 videos, 3,482 windows). The other 10 planned subjects could not be downloaded: Google Drive began refusing range requests on the shared files. Selected: logistic regression, C = 0.03, state-only features, threshold 0.56.
+
+| Held-out test subjects, per window (n = 584) | Model | PERCLOS ≥ 15% rule |
+|---|---|---|
+| ROC-AUC | 0.864 | 0.846 |
+| Accuracy | 70.2% | 63.9% |
+| Precision | 0.897 | 0.931 |
+| Recall | 0.470 | 0.315 |
+| F1 | 0.617 | 0.471 |
+| Alert windows flagged | 5.6% | 2.4% |
+
+Per video, 8 of 10 test videos are classified correctly (both errors are drowsy videos called alert). Leaving out each official fold in turn gives ROC-AUC 0.818 ± 0.071 and F1 0.666 ± 0.107; the weakest fold scores 0.685.
+
+The model is conservative: it misses half of drowsy windows, and the rules remain the primary alarm. The disclosure notes in `metrics.json` record the two protocol changes made during development and why.
 
 ## Inference outside the browser
 

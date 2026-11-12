@@ -1,0 +1,67 @@
+{
+ "feature_config": {
+  "sample_hz": 15.0,
+  "max_frame_side": 960,
+  "window_s": 60.0,
+  "min_window_s": 30.0,
+  "stride_s": 10.0,
+  "recent_s": 15.0,
+  "min_visible_frac": 0.5,
+  "calibration_s": 4.0,
+  "calibration_min_frames": 30,
+  "calibration_min_ear": 0.12,
+  "calibration_trim": 0.2,
+  "closure_ratio": 0.78,
+  "deep_closure_ratio": 0.6,
+  "blink_max_ms": 400.0,
+  "long_closure_ms": 500.0,
+  "yawn_ratio": 0.55,
+  "yawn_margin": 0.25,
+  "yawn_hold_ms": 900.0,
+  "nod_degrees": 18.0,
+  "nod_hold_ms": 800.0,
+  "head_down_degrees": 8.0,
+  "head_speed_max_gap_ms": 200.0,
+  "trim_start_s": 5.0,
+  "trim_end_s": 5.0
+ },
+ "landmarker": "face_landmarker.task (float16/1)",
+ "splits": {
+  "test": [
+   "rldd:50",
+   "rldd:51",
+   "rldd:53",
+   "rldd:56",
+   "rldd:60"
+  ],
+  "train": [
+   "rldd:04",
+   "rldd:05",
+   "rldd:09",
+   "rldd:10",
+   "rldd:11",
+   "rldd:12",
+   "rldd:16",
+   "rldd:17",
+   "rldd:18",
+   "rldd:20",
+   "rldd:21",
+   "rldd:23",
+   "rldd:24",
+   "rldd:27",
+   "rldd:29",
+   "rldd:31",
+   "rldd:32",
+   "rldd:34",
+   "rldd:35"
+  ],
+  "val": [
+   "rldd:37",
+   "rldd:40",
+   "rldd:41",
+   "rldd:44",
+   "rldd:45",
+   "rldd:46"
+  ]
+ }
+}

@@ -42,6 +42,21 @@ def best_f1_threshold(y: np.ndarray, proba: np.ndarray) -> float:
     return float(grid[int(np.argmax(scores))])
 
 
+def threshold_for_false_alarm_rate(y: np.ndarray, proba: np.ndarray, max_fpr: float) -> float:
+    """Lowest cut-off (so highest recall) that flags at most ``max_fpr`` of alert windows.
+
+    A warning system tuned for F1 alarms on a large share of alert driving and
+    gets switched off; capping false alarms is the requirement that matters.
+    """
+    alert = np.sort(proba[y == 0])
+    if len(alert) == 0:
+        return 0.5
+    # Values strictly above this alert-score quantile are flagged.
+    k = int(np.floor(len(alert) * (1 - max_fpr)))
+    cut = alert[min(k, len(alert) - 1)]
+    return float(np.nextafter(cut, np.inf)) if k < len(alert) else float(alert[-1])
+
+
 def video_level(frame: pd.DataFrame, proba: np.ndarray, threshold: float) -> Dict:
     """Mean probability per video: RLDD labels whole videos, so this is the like-for-like score."""
     grouped = frame.assign(proba=proba).groupby("video_key").agg(y=("y", "first"), proba=("proba", "mean"))

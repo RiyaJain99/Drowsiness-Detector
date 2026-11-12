@@ -37,6 +37,18 @@ describe('evaluateModel', () => {
   });
 });
 
+describe('linear models', () => {
+  it('applies weights and bias through the logistic link', () => {
+    const model = stump({ kind: 'logistic_regression', combine: 'linear', trees: [], weights: [2], bias: -1 });
+    expect(evaluateModel(model, [0.5])).toBeCloseTo(0.5);
+    expect(evaluateModel(model, [1])).toBeCloseTo(1 / (1 + Math.exp(-1)));
+  });
+
+  it('rejects a linear model without one weight per feature', () => {
+    expect(parseModel({ ...stump({}), combine: 'linear', trees: [], weights: [] })).toBeNull();
+  });
+});
+
 describe('classify', () => {
   it('reports confidence in the class it chose', () => {
     expect(classify(stump({}), [2])).toMatchObject({ label: 'drowsy', confidence: 0.8 });

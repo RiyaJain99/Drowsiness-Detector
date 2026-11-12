@@ -72,6 +72,8 @@ def run(items: list, workers: int, max_on_disk: int, save_frames: bool) -> int:
                     except Exception as err:  # noqa: BLE001 - one bad video must not end the run
                         failures += 1
                         log(f"FETCH FAILED {item.key}: {err}")
+                        if item.temporary:
+                            shutil.rmtree(TMP_DIR / f"{item.dataset}-{item.subject}-{item.video_id}", ignore_errors=True)
                         continue
                     meta = {"dataset": item.dataset, "subject": item.subject, "video_id": item.video_id,
                             "label": item.label, "fold": item.fold, **item.meta}

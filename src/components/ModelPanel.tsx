@@ -6,7 +6,11 @@ import type { Reading } from '../lib/drowsiness';
 import type { MetricBlock, TrainingReport } from '../lib/mlModel';
 
 const heading = 'text-body-md font-semibold uppercase tracking-wider text-outline m-0';
-const KIND_NAME: Record<string, string> = { random_forest: 'Random Forest', xgboost: 'XGBoost' };
+const KIND_NAME: Record<string, string> = {
+  random_forest: 'Random Forest',
+  xgboost: 'XGBoost',
+  logistic_regression: 'Logistic regression',
+};
 
 const RADIUS = 54;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
@@ -257,12 +261,18 @@ function Report({ report, trees, features }: { report: TrainingReport; trees: nu
         </div>
       </div>
 
+      {report.notes?.map((note) => (
+        <p key={note} className="m-0 text-body-sm text-outline border-l-2 border-secondary/60 pl-2.5">
+          {note}
+        </p>
+      ))}
+
       <dl className="grid grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-2 m-0 text-body-sm pt-3 border-t border-outline-variant/20">
         {[
-          ['Algorithm', `${KIND_NAME[report.model.kind] ?? report.model.kind} · ${trees} trees`],
+          ['Algorithm', `${KIND_NAME[report.model.kind] ?? report.model.kind}${trees ? ` · ${trees} trees` : ''}`],
           ['Trained', new Date(report.trained_at).toLocaleDateString()],
           ['Dataset', report.datasets.join(', ').toUpperCase()],
-          ['Features', `${features} per 60 s window`],
+          ['Features', `${report.model.features_used?.length ?? features} per 60 s window`],
           ['Subjects', `${data.train.subjects} train · ${data.val.subjects} val · ${data.test.subjects} test`],
           ['Windows', data.all.windows.toLocaleString()],
           ['Videos', String(data.all.videos)],
