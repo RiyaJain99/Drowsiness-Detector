@@ -71,7 +71,7 @@ Dividing by eye width is the point — the value is independent of distance from
 
 **Per-driver calibration.** Published implementations hard-code `EAR < 0.25`, which really means "0.25 worked for the author's eyes". This samples four seconds of open-eye baseline, takes a *trimmed* mean so a blink during calibration cannot drag it down, and sets `threshold = baseline × 0.78`. There is a test covering a driver whose open eyes read 0.19, where the fixed cutoff would report them as permanently asleep.
 
-**PERCLOS.** Proportion of eyes-closed time over a rolling 60-second window. This, not instantaneous EAR, is the metric validated against driving impairment in the fatigue literature — a single low frame is noise. Above 15% is drowsy, above 30% critical.
+**PERCLOS.** Proportion of eyes-closed time over a rolling 60-second window. This, not instantaneous EAR, is the metric validated against driving impairment in the fatigue literature — a single low frame is noise. Above 15% is drowsy, above 30% critical. It only drives alerts once the window holds 20 seconds of data: right after calibration a single blink is a large share of a nearly empty window.
 
 **Blink versus microsleep.** A closure at or under 400 ms is an ordinary blink. Past 500 ms it is a microsleep and escalates while the eyes are *still shut*, not after they reopen. A detector that alarms on normal blinking is one that gets switched off on day one.
 

@@ -384,8 +384,11 @@ export class DrowsinessAnalyzer {
 
     const perclos = this.perclos();
     this.perclosNow = perclos;
-    this.computeScore(perclos, now);
-    const transitioned = this.decide(perclos, now);
+    // The live reading always shows PERCLOS, but it only drives alerts and the
+    // score once the window holds enough data to mean something.
+    const usable = this.perclosReliable(now) ? perclos : 0;
+    this.computeScore(usable, now);
+    const transitioned = this.decide(usable, now);
     return this.snapshot({ ...frame, ear }, closed, perclos, transitioned);
   }
 
@@ -628,6 +631,11 @@ export class DrowsinessAnalyzer {
 
   private get distracted(): boolean {
     return this.distractionCounted && this.turnedSince !== null;
+  }
+
+  /** True once the PERCLOS window spans at least `perclosMinMs` of samples. */
+  private perclosReliable(now: number): boolean {
+    return this.samples.length > 0 && now - this.samples[0].t >= this.cfg.perclosMinMs;
   }
 
   /** A full minute of data is needed before a per-minute rate means anything. */

@@ -115,6 +115,20 @@ describe('escalation', () => {
     expect(reading.state).toBe('drowsy');
   });
 
+  it('does not call drowsy on one normal blink right after calibration', () => {
+    // The PERCLOS window is nearly empty here, so a 230 ms blink is ~30% of it.
+    driver.calibrate().run(300, OPEN).run(230, SHUT).run(100, OPEN);
+    const reading = driver.read();
+    expect(reading.perclos).toBeGreaterThan(15);
+    expect(reading.state).toBe('alert');
+    expect(reading.scoreParts.perclos).toBe(0);
+  });
+
+  it('still escalates on a microsleep before the PERCLOS window has filled', () => {
+    driver.calibrate().run(300, OPEN).run(700, SHUT);
+    expect(driver.state).toBe('critical');
+  });
+
   it('calls drowsy on repeated yawning even with PERCLOS low', () => {
     driver.calibrate();
     for (let i = 0; i < 2; i++) driver.run(1500, OPEN, OPEN_MOUTH).run(1000, OPEN);

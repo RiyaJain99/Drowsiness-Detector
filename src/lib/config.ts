@@ -33,6 +33,8 @@ export interface MonitorConfig {
   lowBlinkRate: number;
   /** Rolling window PERCLOS is computed over. */
   perclosWindowMs: number;
+  /** Data the PERCLOS window must hold before PERCLOS may raise an alert. */
+  perclosMinMs: number;
   /** PERCLOS percentage at which the driver is considered drowsy. */
   drowsyPerclos: number;
   /** PERCLOS percentage that escalates to critical. */
@@ -100,6 +102,10 @@ export const DEFAULT_CONFIG: MonitorConfig = {
   highBlinkRate: 32,
   lowBlinkRate: 6,
   perclosWindowMs: 60_000,
+  // Right after calibration the window holds only a few frames, so one normal
+  // blink could read as PERCLOS 15%+. Wait for 20 s of data first; sudden
+  // danger is still covered by the microsleep rule, which needs no history.
+  perclosMinMs: 20_000,
   // PERCLOS above 15% is the standard drowsiness criterion.
   drowsyPerclos: 15,
   criticalPerclos: 30,
